@@ -1,0 +1,166 @@
+#include <SPI.h>
+#include <Ethernet.h>
+
+byte    mac[]     ={}; //{0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED}
+byte    ip[]      ={};//{192.168.xxx.xxx}
+String  message   =""; // holds confirmation message.
+EthernetServer  server(80);// not too sure what number should go here in the example I was referencing the number 80 was used.
+String  get_request; //holds get request
+boolean reading   = false; // true while get request is being received.
+
+void setup() {
+ serial.begin(9600);
+ Ethernet.begin(mac,ip);
+ server.begin();
+ serial.print ln("ready");
+}
+
+void loop() {
+  EthernetClient client=server.available();
+char    return_message[30];
+  if (client) {
+    serial.print("new client");
+    boolean sentContent   = false;
+    get_request           ="";
+
+    boolean   currentLineIsBlank = true;
+    while (client.connected()) {
+      if (client.available()){
+        char    c = client.read();
+        if(reading && c == '')
+        { reading = false;
+          parseGetRequest(get_request);
+         
+          break;
+        }
+
+        if(c == '?') {
+          reading = true;
+        }
+        if(reading){
+          get_request += c;
+        }
+        if(reading && c == '\n'){
+          break;
+        }
+        if(c == '\n' && currentLineIsBlank) {
+          break;}
+        if(c == '\n'){
+          currentLineIsBlank = true ;
+        }
+        else if(c != '\r'){
+          currentLineIsBlank = false;
+        }
+      }
+    }
+
+    if (!sentContent){
+      construction_page(client);
+      sentContent = true;
+    }
+
+    delay(1); // gives time for the server to recieve data
+    client.stop();
+    Serial.print ln("client disconnected");
+  }
+}
+
+void construct_page(EthernetClient &client)
+{
+  print_header(client);
+  print_form(client);
+  print_confirmation(client);
+  end_page(client);
+}
+
+void print_header(EthernetClient &client)
+{
+  client.print(HTTP/1.1 200 OK);//client for our board might be different
+  client.print("Content-Type: text/html");
+  client.print();
+  client.print("<html><head><title>");
+  client.print("GET motor control ");
+  client.print("</title><body>");
+}
+
+void print_confirmation(EthernetClient &client)
+{
+  client.print("Action preformed: <b>");
+  client.print(get_request);
+  client.print("</b>");
+}
+
+//html body the form action and method should be the indication of javascript.
+// instead of a speed control later on I need to adjust it to control 2 motors and 1 steady speed.
+// seeing as there will be 2 motors facing opposite directions the coding will have to be reversed for one of them so both of them spin the same way.
+void print_form(EthernetClient &client)
+{
+  client.print("<form action='/' method='get'>");
+  client.print(<div class="controls">);
+  client.print(<button class="up" value="1" onclick="this.form.submit()">Up</button><br>);// value 1 is both motors one direction
+  client.print(<button class="left" value="3" onclick="this.form.submit()">Left</button>);// value 3 is motors in opp dir
+  client.print(<button class="right" value="4" onclick="this.form.submit()">Right</button><br>);// value 4 is value 3 reversed
+  client.print(<button class="down" value="2" onclick="this.form.submit()">Down</button>);// value 2 is both motors backwards
+  client.print(</div></form>);
+}
+
+void end_page(EthernetClient &client)
+{
+  client.print("</body>");
+  client.print("</html>");
+}
+
+void parseGetRequest(String &str){
+  // this should parse: "?speed1=50&direction1=0"
+  Serial.print("Parsing this string:");
+  Serial.print(str);
+
+  //value pair delimiter char: "&"
+  int delimiter_index = str.indexOf("&");// the & is a limiter that seperates the two sets of instructions
+  Serial.print("delimiter_index:");
+  Serial.print(str.indexOf("&"));
+
+  //get speed
+  int speed_index = str.indexOf("speed");// might have to change this to str.indexOf("?")
+  Serial.print("motor_number: ");// the example had one motor so I will have to index the motors in an array
+  Serial.print(str[speed_index + 5]);//"?speed=(x)0&direction1=0"
+  int motor_number = str[speed_index + 5] - '0';
+
+ 
+  //instead of variable speed, well change it to
+  //two motors at same speed for forward and back
+  //two motors at same speed opposite direction for left and right
+  char speed_value_array[4]; // the fourth char is for null, this array uses the first 3 numbers I believe
+  for(int i=speed_index + 7; i < delimiter_index; i++){
+    Serial.print(i-8);
+    Serial.print("-");
+      speed_value_array[i-8]= str[i];
+      Serial.print(str[i]);
+        Serial.print("+");
+  }
+ 
+  Serial.print();
+  //The atoi() function returns the converted integer value if the execution is successful. If the passed string is not convertible to an integer, it will return a zero.
+  int motor_speed_value = atoi(speed_value_array);// change speed value array to speed value constant
+  Serial.print("Motor speed value: ");
+  Serial.print(motor_speed_value);
+
+  //Get direction the "x" is what is being changed/referenced
+  int direction_number  = str[delimiter_index + 10] - '0';//"?speed1=50&direction(x)=0"
+  Serial.print("direction_number: ");
+  Serial.print(str[delimiter_index + 10]);//"?speed1=50&direction(x)=0"
+  int direction_value = str[delimiter_index + 12] - '0';//"?speed1=50&direction1=(x)"
+  Serial.print("direction_value.");
+  Serial.print(str[delimiter_index + 12]);//"?speed1=50&direction1=(x)"
+
+  executeInstruction(motor_number, motor_speed_value, direction_number, direction_value)
+}
+
+void executionInstruction(int motor_number, int motor_speed_value, int dir_pin, int dir_value)//dir_pin = direction_number
+{
+  pinMode(dir_pin, OUTPUT);
+  pinMode(motor_number, OUTPUT);
+  digitalWrite(dir_pin, direction_value);
+  alalogWrite(motor_number, motor_speed_value);
+  delay(30);
+}
