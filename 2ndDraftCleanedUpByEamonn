@@ -1,0 +1,212 @@
+/libraries
+#include <SPI.h>
+#include <Ethernet.h>
+
+//universal variables needed.
+static byte ip[] = {};//{192,168,x,x}
+static byte mac[] = {0xDE, 0xAD, 0xBE, 0xFE, 0xED};
+String get_request;
+String message = "";
+bool reading = false;
+EthernetServer Server(80);
+
+//initialize server and ethernet connection
+void setup() {
+  Ethernet.begin(mac, ip);
+  Serial.begin(9600);
+  Server.begin();
+  Serial.print("Ready!");
+}
+
+//set up server loop.
+void loop() {
+  EthernetClient Client= Server.available();
+  char return_message[30];
+  if(Client) {
+    Serial.print("new client");
+    boolean sentContent = false;
+    get_request= "";
+
+    boolean currentLineIsBlank = true;
+    while (Client.connected()){
+      if(Client.available()){
+        char c= Client.read();
+       
+        if(reading && c== "") //warning for "forbidden" pointer + int comparison.
+        {
+          reading = false;
+          parseGetRequest(get_request);
+          break;
+        }
+       
+        if(c== "?") //warning for "forbidden" pointer + int comparison.
+        {
+          reading= true;
+        }
+
+        if(reading) //warning for "forbidden" pointer + int comparison.
+        {
+          get_request += c;
+        }
+
+        if(reading && c== "\n") //warning for "forbidden" pointer + int comparison.
+        {
+          break;
+        }
+
+        if(currentLineIsBlank && c=="\n") //warning for "forbidden" pointer + int comparison.
+        {
+          break;
+        }
+
+        if(c== "\n") //warning for "forbidden" pointer + int comparison.
+        {
+          currentLineIsBlank = true;
+        }
+
+        else if(c != "\r") //warning for "forbidden" pointer + int comparison.
+        {
+          currentLineIsBlank= false;
+        }
+         
+     }
+    }
+   
+    //make webpage.
+   if(!sentContent)
+   {
+    construct_page(Client);
+    sentContent= true;
+   }
+
+   delay(1);//gives time for data transfer.
+   Client.stop();
+   Serial.print("Client disconnect");
+ }
+}
+
+void construct_page(EthernetClient &Client)
+{
+  print_htmlPage(Client);
+}
+
+void print_htmlPage(EthernetClient &Client)
+{
+  //head
+  Client.print("HTTP/1.1 200 OK");
+  Client.print("Content_Type: text/html");
+  Client.print("<html><head><title>");
+  Client.print("GET motorControls");
+  Client.print("</title></head><body>");
+
+  //get request
+  Client.print("<!--Preforming get request.");
+  Client.print(get_request);// universal var
+  Client.print("Get request successful.-->");
+
+  //website control form                                                                                                                                          (i might have to make one name and value for the buttons
+  Client.print("<form action='/' method='get'>");//Action attribute tells where to send data when form is submitted.                                              and make a method to assign the rest of the values.)
+  Client.print("<button name='motor0|direction0' name1='motor1|direction1' value='254|0' value1='254|1' onclick='this.form.submit()'>up  </button><br>");//       Since the motors are facing opposite directions,
+  Client.print("<button name='motor0|direction0' name1='motor1|direction1' value='254|0' value1='254|0' onclick='this.form.submit()'>left</button>");//           the direction values need to be opposite to move the vehicle one way.
+  Client.print("<button name='motor0|direction0' name1='motor1|direction1' value='254|1' value1='254|1'onclick='this.form.submit()'>right</button><br>");//       each button needs to send 2 values"speed & direction" for 2 motors.
+  Client.print("<button name='motor0|direction0' name1='motor1|direction1' value='254|1' value1='254|0'onclick='this.form.submit()'>down </button>");//           [0,1] are indicitive of direction.
+  Client.print("</form>");//                                                                                                                                      [0,254] is the stop and go speed.
+//                                                                                                                                                                motor0|motor1 is for speed
+  //end of website                                                                                                                                                direction0|direction1 is for their direction
+  Client.print("</body>");
+  Client.print("</html>");
+ 
+}
+
+void parseGetRequest(String &str)
+{
+  //should parse: "?motor0=0&direction0=0%motor1=0&direction1=0"
+  //in the address bar.
+  Serial.print("Parsing this string:");                           //In the example I follow, he wants to parse "?speed1=50&direction1=0" in the address bar and only uses 1 delimiter (&)
+  Serial.print(str);                                              //I would like to parse "?motor0=0&direction0=0%motor1=0&direction1=0" in the address bar and use 2 delimiters (&,%)
+
+  //declare delimiters (instruction seperator)
+  int delimiter_index0= str.indexOf("&") ;
+  int delimiter_index1= str.indexOf("%") ;
+  Serial.print("delimiter_index0:");
+  Serial.print(str.indexOf("&"));
+  Serial.print("delimiter_index1:");
+  Serial.print(str.indexOf("%"));
+
+  //get speeds
+  int speed_index0= str.indexOf("motor0");
+  int motor_0= str[speed_index0 + 6] - '0';
+  int speed_index1= str.indexOf("motor1");
+  int motor_1= str[speed_index1 + 6] - '0';
+  Serial.print("motor0 speed :");
+  Serial.print(str[speed_index0 + 6]);
+  Serial.print("motor1 speed :");
+  Serial.print(str[speed_index1 + 6]);
+ 
+  //speed values
+  char motor0_speed_array[4] = {str[speed_index0 +7]} ; //"?motor0=(x)&direction0=0%motor1=0&direction1=0"
+  char motor1_speed_array[4] = {str[speed_index1 +7]} ; //"?motor0=0&direction0=0%motor1=(x)&direction1=0"
+
+  // returns converted int value
+  int motor0_speed_value= atoi(motor0_speed_array);
+  int motor1_speed_value= atoi(motor1_speed_array);
+  Serial.print("motor0 speed value :");
+  Serial.print(motor0_speed_value);
+  Serial.print("motor1 speed value :");
+  Serial.print(motor1_speed_value);
+
+  //get directions
+  int dir_index0= str.indexOf("direction0");
+  int dir_0= str[dir_index0 + 12] - '0';
+  int dir_index1= str.indexOf("direction1");
+  int dir_1= str[dir_index1 + 12] - '0';
+  Serial.print("motor0 direction :");
+  Serial.print(str[dir_index0 + 12]);
+  Serial.print("motor1 direction :");
+  Serial.print(str[dir_index1 + 12]);
+
+  //2 directions but i believe i have to have a 3rd char for null.(might be wrong)
+  char motor0_dir_array[3] = {str[dir_index0 +12]} ; //"?motor0=0&direction0=(x)%motor1=0&direction1=0"
+  char motor1_dir_array[3] = {str[dir_index1 +12]} ; //"?motor0=0&direction0=0%motor1=0&direction1=(x)"
+
+  // returns converted int value
+  int motor0_dir_value= atoi(motor0_dir_array);
+  int motor1_dir_value= atoi(motor1_dir_array);
+  Serial.print("motor0 direction value :");
+  Serial.print(motor0_speed_value);
+  Serial.print("motor1 direction value :");
+  Serial.print(motor1_speed_value);
+
+  //sticking "pin values" here because I don't know them yet
+  int motor0_pin_value = "";
+  int motor1_pin_value = "";
+  int motor0d_pin_value = "";//assuming there is a direction input
+  int motor1d_pin_value = "";
+ 
+  executeInstructions(motor0_speed_value, motor1_speed_value, motor0_dir_value, motor1_dir_value, motor0_pin_value, motor1_pin_value, motor0d_pin_value, motor1d_pin_value);
+ 
+}
+
+void executeInstructions(int motor0_speed, int motor1_speed, int motor0_dir, int motor1_dir,int motor0_value, int motor1_value, int motor0d_value, int motor1d_value)
+{
+ 
+  //need to send the pin values from parseGetRequest  
+  pinMode(motor0_value,OUTPUT);
+  pinMode(motor0d_value,OUTPUT);//d for direction (assuming there is a direction)
+  pinMode(motor1_value,OUTPUT);
+  pinMode(motor1d_value,OUTPUT);//d for direction
+
+  //need to give those pins instructions
+  digitalWrite(motor0_value, motor0_speed);
+  digitalWrite(motor0d_value, motor0_dir);
+  digitalWrite(motor1_value, motor1_speed);
+  digitalWrite(motor1d_value, motor1_dir);
+
+  analogWrite(motor0_value, motor0_speed);
+  analogWrite(motor0d_value, motor0_dir);
+  analogWrite(motor1_value, motor1_speed);
+  analogWrite(motor1d_value, motor1_dir);
+
+  //data transfer allowance.
+  delay(30);
+}
